@@ -1,0 +1,44 @@
+# Consistency Guard — local production stack (app + Postgres).
+# Usage:
+#   DB_PASSWORD=choose-a-strong-password \
+#   JWT_SECRET=$(openssl rand -hex 32) \
+#   ENCRYPTION_KEY=$(openssl rand -hex 32) \
+#   docker compose up -d --build
+# Then open http://localhost:4000
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cg
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in your environment}
+      POSTGRES_DB: consistency_guard
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cg -d consistency_guard"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DB_PROVIDER: postgresql
+      DATABASE_URL: postgresql://cg:${DB_PASSWORD:?Set DB_PASSWORD}@db:5432/consistency_guard
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4000}
+      EVIDENCE_CORPUS_PATH: ${EVIDENCE_CORPUS_PATH:-}
+    ports:
+      - "4000:4000"
+
+volumes:
+  pgdata:

@@ -1,0 +1,442 @@
+// Consistency Guard — relational schema.
+//
+// SQLite is used for the runnable local demo. All field types were chosen to be
+// PostgreSQL-compatible (String ids via cuid(), DateTime, Json, Float, Boolean).
+// To move to Postgres: change `provider` to "postgresql" and set DATABASE_URL.
+//
+// Required indexes: userId, evaluationId, modelId, createdAt, benchmarkId.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                  String    @id @default(cuid())
+  name                String
+  email               String    @unique
+  passwordHash        String
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  sessions       Session[]
+  credentials    UserApiCredential[]
+  evaluations    Evaluation[]
+  questions      Question[]
+  benchmarks     Benchmark[]
+  datasets       UploadedDataset[]
+  reports        Report[]
+  preferences    UserPreference?
+  promptAnalyses PromptAnalysis[]
+  promptHistory  PromptHistory[]
+  historyEvents  History[]
+
+  @@index([email])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model AIProvider {
+  id          String   @id @default(cuid())
+  key         String   @unique // openai | anthropic | gemini | mistral | llama | perplexity
+  displayName String
+  docsUrl     String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  models      AIModel[]
+  credentials UserApiCredential[]
+}
+
+model AIModel {
+  id                 String     @id @default(cuid())
+  providerId         String
+  provider           AIProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  modelKey           String // e.g. gpt-4o
+  displayName        String
+  contextLength      Int?
+  costPer1kInputUsd  Float?
+  costPer1kOutputUsd Float?
+  speed              String   @default("medium") // fast | medium | slow
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  evaluationRuns EvaluationRun[]
+  responses      ModelResponse[]
+  metrics        MetricResult[]
+  claims         FactClaim[]
+
+  @@unique([providerId, modelKey])
+  @@index([providerId])
+}
+
+model UserApiCredential {
+  id             String     @id @default(cuid())
+  userId         String
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  providerId     String
+  provider       AIProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  encryptedKey   String // AES-256-GCM ciphertext — NEVER returned to clients
+  keyHint        String // masked, e.g. sk-••••ab12
+  isActive       Boolean    @default(true)
+  lastTestedAt   DateTime?
+  lastTestStatus String? // ok | failed
+  lastTestError  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([userId, providerId])
+  @@index([userId])
+}
+
+model Question {
+  id                 String      @id @default(cuid())
+  userId             String?
+  user               User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  text               String
+  domain             String      @default("general")
+  taskType           String      @default("qa")
+  systemInstructions String?
+  referenceAnswer    String?
+  createdAt          DateTime    @default(now())
+
+  evaluations Evaluation[]
+
+  @@index([userId])
+}
+
+model Evaluation {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questionId     String?
+  question       Question? @relation(fields: [questionId], references: [id], onDelete: SetNull)
+  questionText   String
+  domain         String    @default("general")
+  taskType       String    @default("qa")
+  evaluationMode String    @default("consistency") // quick | consistency | deep | adversarial
+  runs           Int       @default(5)
+  status         String    @default("pending") // pending | running | completed | partial | failed
+  statusMessage  String?
+  weights        String?
+  avgReliability Float?
+  avgConsistency Float?
+  totalCostUsd   Float?
+  totalLatencyMs Int?
+  summary        String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  evalRuns        EvaluationRun[]
+  responses       ModelResponse[]
+  metrics         MetricResult[]
+  conflicts       Conflict[]
+  claims          FactClaim[]
+  evidence        EvidenceSource[]
+  analyses        PromptAnalysis[]
+  suggestions     PromptSuggestion[]
+  reports         Report[]
+  benchmarkRuns   BenchmarkRun[]
+  historyEvents   History[]
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([status])
+  @@index([domain])
+}
+
+model EvaluationRun {
+  id           String      @id @default(cuid())
+  evaluationId String
+  evaluation   Evaluation  @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  modelId      String?
+  model        AIModel?    @relation(fields: [modelId], references: [id], onDelete: SetNull)
+  modelKey     String
+  providerId   String
+  runIndex     Int
+  status       String      @default("pending") // pending | running | completed | failed
+  errorMessage String?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  latencyMs    Int?
+
+  responses ModelResponse[]
+
+  @@index([evaluationId])
+  @@index([modelId])
+}
+
+model ModelResponse {
+  id               String         @id @default(cuid())
+  evaluationId     String
+  evaluation       Evaluation     @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  runId            String?
+  run              EvaluationRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
+  modelId          String?
+  model            AIModel?       @relation(fields: [modelId], references: [id], onDelete: SetNull)
+  providerId       String
+  modelKey         String
+  runIndex         Int
+  responseText     String
+  normalizedText   String?
+  inputTokens      Int?
+  outputTokens     Int?
+  latencyMs        Int?
+  estimatedCostUsd Float?
+  status           String         @default("completed") // completed | failed | unavailable
+  errorMessage     String?
+  createdAt        DateTime       @default(now())
+
+  @@index([evaluationId])
+  @@index([modelId])
+  @@index([createdAt])
+}
+
+model MetricResult {
+  id           String     @id @default(cuid())
+  evaluationId String
+  evaluation   Evaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  modelId      String?
+  model        AIModel?   @relation(fields: [modelId], references: [id], onDelete: SetNull)
+  modelKey     String
+  metricName   String // accuracy | consistency | relevance | completeness | grounding | instructionFollowing | reliability | hallucinationRisk | uncertainty | crossModelAgreement
+  value        Float
+  isEstimated  Boolean    @default(false)
+  explanation  String?
+  createdAt    DateTime   @default(now())
+
+  @@index([evaluationId])
+  @@index([modelId])
+}
+
+model Conflict {
+  id           String     @id @default(cuid())
+  evaluationId String
+  evaluation   Evaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  claimText    String
+  modelAKey    String?
+  modelBKey    String?
+  conflictType String // direct_contradiction | numerical | date | definition | recommendation | unsupported
+  severity     String // low | medium | high
+  explanation  String
+  createdAt    DateTime   @default(now())
+
+  @@index([evaluationId])
+}
+
+model FactClaim {
+  id           String     @id @default(cuid())
+  evaluationId String
+  evaluation   Evaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  modelId      String?
+  model        AIModel?   @relation(fields: [modelId], references: [id], onDelete: SetNull)
+  modelKey     String
+  claimText    String
+  claimType    String     @default("factual") // factual | numeric | date | definition | recommendation
+  status       String     @default("unverified") // supported | contradicted | unverified
+  confidence   Float?
+  createdAt    DateTime   @default(now())
+
+  evidence EvidenceSource[]
+
+  @@index([evaluationId])
+  @@index([modelId])
+}
+
+model EvidenceSource {
+  id            String     @id @default(cuid())
+  evaluationId  String
+  evaluation    Evaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  factClaimId   String?
+  factClaim     FactClaim? @relation(fields: [factClaimId], references: [id], onDelete: SetNull)
+  title         String
+  url           String
+  snippet       String
+  sourceType    String     @default("reference") // documentation | reference | knowledge_base
+  confidence    Float?
+  isAiGenerated Boolean    @default(false)
+  createdAt     DateTime   @default(now())
+
+  @@index([evaluationId])
+}
+
+model PromptHistory {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  original    String
+  improved    String
+  scoreBefore Float
+  scoreAfter  Float
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+}
+
+model PromptAnalysis {
+  id           String      @id @default(cuid())
+  evaluationId String?
+  evaluation   Evaluation? @relation(fields: [evaluationId], references: [id], onDelete: SetNull)
+  userId       String?
+  user         User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  promptText   String
+  score        Float
+  dimensions   String
+  issues       String
+  suggestions  String
+  createdAt    DateTime    @default(now())
+
+  promptSuggestions PromptSuggestion[]
+
+  @@index([userId])
+  @@index([evaluationId])
+}
+
+model PromptSuggestion {
+  id               String          @id @default(cuid())
+  evaluationId     String?
+  evaluation       Evaluation?     @relation(fields: [evaluationId], references: [id], onDelete: SetNull)
+  promptAnalysisId String?
+  promptAnalysis   PromptAnalysis? @relation(fields: [promptAnalysisId], references: [id], onDelete: SetNull)
+  originalPrompt   String
+  optimizedPrompt  String
+  createdAt        DateTime        @default(now())
+}
+
+model Benchmark {
+  id          String    @id @default(cuid())
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  name        String
+  description String?
+  domain      String    @default("general")
+  status      String    @default("draft") // draft | ready | running | completed | failed
+  isCurated   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  questions BenchmarkQuestion[]
+  runs      BenchmarkRun[]
+  reports   Report[]
+
+  @@index([userId])
+  @@index([domain])
+}
+
+model BenchmarkQuestion {
+  id             String    @id @default(cuid())
+  benchmarkId    String
+  benchmark      Benchmark @relation(fields: [benchmarkId], references: [id], onDelete: Cascade)
+  questionText   String
+  domain         String    @default("general")
+  expectedAnswer String?
+  difficulty     String?
+  tags           String?
+  createdAt      DateTime  @default(now())
+
+  @@index([benchmarkId])
+}
+
+model BenchmarkRun {
+  id                  String      @id @default(cuid())
+  benchmarkId         String
+  benchmark           Benchmark   @relation(fields: [benchmarkId], references: [id], onDelete: Cascade)
+  evaluationId        String?
+  evaluation          Evaluation? @relation(fields: [evaluationId], references: [id], onDelete: SetNull)
+  questionId          String?
+  modelKey            String
+  status              String      @default("pending")
+  groundTruthAccuracy Float?
+  reliability         Float?
+  createdAt           DateTime    @default(now())
+
+  @@index([benchmarkId])
+  @@index([evaluationId])
+}
+
+model UploadedDataset {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fileName          String
+  fileType          String // csv | json
+  rowCount          Int      @default(0)
+  validRows         Int      @default(0)
+  invalidRows       Int      @default(0)
+  validationSummary String?
+  columnMapping     String?
+  rows              String?
+  status            String   @default("processed")
+  createdAt         DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Report {
+  id           String     @id @default(cuid())
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  evaluationId String?
+  evaluation   Evaluation? @relation(fields: [evaluationId], references: [id], onDelete: SetNull)
+  benchmarkId  String?
+  benchmark    Benchmark?  @relation(fields: [benchmarkId], references: [id], onDelete: SetNull)
+  title        String
+  format       String     @default("json") // json | html | pdf
+  content      String?
+  htmlContent  String?
+  filePath     String?
+  createdAt    DateTime   @default(now())
+
+  @@index([userId])
+  @@index([evaluationId])
+  @@index([benchmarkId])
+}
+
+model UserPreference {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  defaultRuns         Int      @default(5)
+  defaultEvaluationMode String  @default("consistency")
+  defaultDomains      String?
+  scoringWeights      String?
+  theme               String   @default("system")
+  emailNotifications  Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model History {
+  id           String      @id @default(cuid())
+  userId       String
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action       String
+  entityType   String?
+  entityId     String?
+  evaluationId String?
+  evaluation   Evaluation? @relation(fields: [evaluationId], references: [id], onDelete: SetNull)
+  metadata     String?
+  createdAt    DateTime    @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}

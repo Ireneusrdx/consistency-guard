@@ -1,0 +1,456 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    /* System font ships optical sizing + tracking tables; enable it. */
+    font-optical-sizing: auto;
+  }
+
+  body {
+    @apply bg-background font-sans text-stone-900 antialiased;
+    /* Body: near-0 tracking, comfortable 1.5 leading (skill §15). */
+    letter-spacing: 0;
+    line-height: 1.5;
+    font-optical-sizing: auto;
+    /* No full-viewport horizontal overflow, ever. `clip` (not `hidden`) so
+       sticky chrome is unaffected — clip creates no scroll container. */
+    overflow-x: clip;
+  }
+
+  .dark body {
+    @apply bg-stone-950 text-stone-100;
+  }
+
+  /* Size-specific tracking: tighten headings, leave body near 0 (§15). */
+  h1,
+  h2 {
+    letter-spacing: -0.02em;
+    font-optical-sizing: auto;
+  }
+
+  h3,
+  h4 {
+    letter-spacing: -0.01em;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-primary-500 ring-offset-2 ring-offset-background;
+  }
+
+  .dark :focus-visible {
+    @apply ring-offset-stone-950;
+  }
+
+  ::selection {
+    @apply bg-primary-600 text-white;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-stone-300;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  .dark ::-webkit-scrollbar-thumb {
+    @apply bg-stone-700;
+  }
+
+  /* Firefox */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.stone.300') transparent;
+  }
+
+  .dark * {
+    scrollbar-color: theme('colors.stone.700') transparent;
+  }
+}
+
+@layer components {
+  .container-page {
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+
+  /* Display headings: negative tracking that grows with size, tight leading. */
+  .type-display {
+    @apply font-bold leading-[1.05] tracking-[-0.02em];
+    font-optical-sizing: auto;
+  }
+
+  /* Translucent materials — floating functional layers, content scrolls under.
+     Never stack one translucent surface on another (skill §12). */
+  .material-chrome {
+    background-color: rgba(255, 255, 255, 0.6);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(20px) saturate(180%);
+  }
+
+  .dark .material-chrome {
+    background-color: rgba(12, 10, 9, 0.6);
+  }
+
+  /* Heavier material for structural regions (sidebar). */
+  .material-heavy {
+    background-color: rgba(255, 255, 255, 0.8);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(20px) saturate(180%);
+  }
+
+  .dark .material-heavy {
+    background-color: rgba(12, 10, 9, 0.8);
+  }
+
+  /* Scroll edge fades — replace hard 1px dividers under floating chrome.
+     A fading blur where content meets the chrome, only where they overlap. */
+  .edge-fade-b {
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    -webkit-mask-image: linear-gradient(to bottom, black, transparent);
+    mask-image: linear-gradient(to bottom, black, transparent);
+  }
+
+  .edge-fade-t {
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    -webkit-mask-image: linear-gradient(to top, black, transparent);
+    mask-image: linear-gradient(to top, black, transparent);
+  }
+
+  .edge-fade-r {
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    -webkit-mask-image: linear-gradient(to right, black, transparent);
+    mask-image: linear-gradient(to right, black, transparent);
+  }
+
+  /* Expanded hit area (~10px) for small targets — ::after never affects
+     layout. The host must already be positioned (absolute/relative/etc.). */
+  .hit-pad::after {
+    content: '';
+    position: absolute;
+    inset: -0.625rem;
+  }
+}
+
+/*
+ * Press feedback — deliberately UNLAYERED so it wins over Tailwind's
+ * `transition-colors` utilities on the same element.
+ *
+ * Highlight/scale happens on pointer-down (:active), ~100ms ease-out.
+ * Applies to every native <button> automatically (.no-press opts out);
+ * .cg-press extends the same treatment to non-button interactive elements
+ * (links, cards). Composes with Tailwind translate/rotate/scale utilities
+ * via the --tw-* variables so offset elements keep their offset while pressed.
+ */
+button:not(.no-press),
+.cg-press {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+button:not(.no-press):not(:disabled),
+.cg-press {
+  transition:
+    transform 100ms ease-out,
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    box-shadow 150ms ease,
+    opacity 150ms ease;
+}
+
+button:not(.no-press):not(:disabled):active,
+.cg-press:not(.no-press):active {
+  transform: translate(var(--tw-translate-x, 0), var(--tw-translate-y, 0))
+    rotate(var(--tw-rotate, 0))
+    scale(calc(var(--tw-scale-x, 1) * 0.97), calc(var(--tw-scale-y, 1) * 0.97));
+  transition-duration: 100ms;
+}
+
+/* ------------------------------------------------------------------ */
+/* Accessibility signals (skill §14)                                   */
+/* ------------------------------------------------------------------ */
+
+/* Reduced motion: cross-fades / static transitions only. JS-driven springs
+   are swapped via usePrefersReducedMotion(); this kills CSS motion. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  button:not(.no-press):not(:disabled):active,
+  .cg-press:not(.no-press):active {
+    transform: none;
+    opacity: 0.85;
+  }
+}
+
+/* Reduced transparency: solid surfaces, no blur. */
+@media (prefers-reduced-transparency: reduce) {
+  .material-chrome,
+  .material-heavy {
+    background-color: #ffffff;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .dark .material-chrome,
+  .dark .material-heavy {
+    background-color: #0c0a09;
+  }
+
+  .edge-fade-b,
+  .edge-fade-t,
+  .edge-fade-r {
+    display: none;
+  }
+}
+
+/* Higher contrast: defined, contrasting borders on chrome and cards. */
+@media (prefers-contrast: more) {
+  .material-chrome,
+  .material-heavy {
+    border: 1px solid rgba(0, 0, 0, 0.35);
+  }
+
+  .dark .material-chrome,
+  .dark .material-heavy {
+    border: 1px solid rgba(255, 255, 255, 0.4);
+  }
+
+  .border-stone-200,
+  .border-border {
+    border-color: #78716c;
+  }
+
+  .dark .border-stone-800 {
+    border-color: #a8a29e;
+  }
+}
+
+/* --------------------------------------------------- custom range slider --
+   Fully themed slider to replace the native browser rendering. Fill portion
+   is driven by the --cg-range-fill custom property (set inline by Slider). */
+.cg-range {
+  --cg-range-fill: 50%;
+  --cg-track: #e7e5e4;
+  --cg-fill: #0d9488;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 24px;
+  background: transparent;
+  cursor: pointer;
+}
+.dark .cg-range {
+  --cg-track: #292524;
+}
+.cg-range:focus {
+  outline: none;
+}
+/* WebKit track + thumb */
+.cg-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    to right,
+    var(--cg-fill) 0 var(--cg-range-fill),
+    var(--cg-track) var(--cg-range-fill) 100%
+  );
+}
+.cg-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -6px;
+  height: 18px;
+  width: 18px;
+  border-radius: 9999px;
+  background: #fff;
+  border: 2px solid var(--cg-fill);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.cg-range:hover::-webkit-slider-thumb {
+  transform: scale(1.12);
+}
+.cg-range:active::-webkit-slider-thumb {
+  transform: scale(1.05);
+  cursor: grabbing;
+}
+.cg-range:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px rgb(13 148 136 / 0.25);
+}
+/* Firefox track + progress + thumb */
+.cg-range::-moz-range-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--cg-track);
+}
+.cg-range::-moz-range-progress {
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--cg-fill);
+}
+.cg-range::-moz-range-thumb {
+  height: 14px;
+  width: 14px;
+  border-radius: 9999px;
+  background: #fff;
+  border: 2px solid var(--cg-fill);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.cg-range:hover::-moz-range-thumb {
+  transform: scale(1.12);
+}
+.cg-range:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 4px rgb(13 148 136 / 0.25);
+}
+.cg-range:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cg-range::-webkit-slider-thumb,
+  .cg-range::-moz-range-thumb {
+    transition: none;
+  }
+  .cg-range:hover::-webkit-slider-thumb,
+  .cg-range:hover::-moz-range-thumb {
+    transform: none;
+  }
+}
+
+/* ------------------------------------------------------- custom checkbox --
+   The native input stays sr-only for semantics; the visible box is styled
+   here so the check can animate with sibling selectors. */
+.cg-checkbox-box {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  width: 20px;
+  border-radius: 6px;
+  border: 1.5px solid #d6d3d1;
+  background: #fff;
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.dark .cg-checkbox-box {
+  border-color: #57534e;
+  background: #1c1917;
+}
+.cg-checkbox-box svg {
+  height: 12px;
+  width: 12px;
+  color: #fff;
+  opacity: 0;
+  transform: scale(0.4);
+  transition: opacity 0.15s ease, transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.cg-checkbox-input:checked + .cg-checkbox-box {
+  background: #0d9488;
+  border-color: #0d9488;
+}
+.cg-checkbox-input:checked + .cg-checkbox-box svg {
+  opacity: 1;
+  transform: scale(1);
+}
+.cg-checkbox-input:focus-visible + .cg-checkbox-box {
+  box-shadow: 0 0 0 3px rgb(13 148 136 / 0.3);
+}
+.cg-checkbox-input:disabled + .cg-checkbox-box {
+  opacity: 0.5;
+}
+.cg-checkbox-input:disabled ~ .cg-checkbox-label-text {
+  opacity: 0.5;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cg-checkbox-box,
+  .cg-checkbox-box svg {
+    transition: none;
+  }
+}
+
+@layer components {
+  /* Eyebrow micro-label — uppercase section kickers, a classic premium signal. */
+  .type-eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400;
+  }
+
+  /* Skeleton shimmer — replaces the previously undefined .cg-skeleton. */
+  .cg-skeleton {
+    position: relative;
+    overflow: hidden;
+    background-color: theme('colors.stone.200');
+  }
+  .dark .cg-skeleton {
+    background-color: theme('colors.stone.800');
+  }
+  .cg-skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.55),
+      transparent
+    );
+    animation: cg-shimmer 1.6s ease-in-out infinite;
+  }
+  .dark .cg-skeleton::after {
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.08),
+      transparent
+    );
+  }
+
+  /* Lift-on-hover for interactive cards — subtle, spring-like. */
+  .card-lift {
+    transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s ease;
+  }
+  .card-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: theme('boxShadow.card-hover');
+  }
+}
+
+@keyframes cg-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cg-skeleton::after {
+    animation: none;
+  }
+  .card-lift,
+  .card-lift:hover {
+    transform: none;
+  }
+}
